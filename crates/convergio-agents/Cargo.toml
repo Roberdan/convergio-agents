@@ -9,8 +9,6 @@ readme = "../../README.md"
 [dependencies]
 convergio-types = { workspace = true }
 convergio-db = { workspace = true }
-convergio-ipc = { workspace = true }
-convergio-telemetry = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
