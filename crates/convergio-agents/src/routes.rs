@@ -47,6 +47,9 @@ async fn create_agent(
     State(pool): State<ConnPool>,
     Json(input): Json<AgentInput>,
 ) -> impl IntoResponse {
+    if let Err(reason) = input.validate() {
+        return Err((StatusCode::BAD_REQUEST, reason));
+    }
     let conn = pool
         .get()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -60,6 +63,9 @@ async fn update_agent(
     Path(name): Path<String>,
     Json(input): Json<AgentInput>,
 ) -> impl IntoResponse {
+    if let Err(reason) = input.validate() {
+        return Err((StatusCode::BAD_REQUEST, reason));
+    }
     let conn = pool
         .get()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

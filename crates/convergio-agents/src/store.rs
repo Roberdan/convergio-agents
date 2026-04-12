@@ -5,7 +5,11 @@ use rusqlite::{params, Connection};
 use crate::types::{AgentCategory, AgentInput, AgentQuery, AgentSpec, AgentStatus};
 
 /// Create a new agent catalog entry, returning its ID.
+/// Validates input before persisting.
 pub fn create_agent(conn: &Connection, input: &AgentInput) -> rusqlite::Result<String> {
+    input
+        .validate()
+        .map_err(rusqlite::Error::InvalidParameterName)?;
     let id = format!("ag-{}", &uuid_short());
     let caps_json = serde_json::to_string(&input.capabilities).unwrap_or_default();
     conn.execute(
@@ -66,8 +70,10 @@ pub fn list_agents(conn: &Connection, q: &AgentQuery) -> rusqlite::Result<Vec<Ag
     }
     sql.push_str(" ORDER BY category, name");
 
-    let limit = q.limit.unwrap_or(20);
-    sql.push_str(&format!(" LIMIT {limit}"));
+    // Cap limit to prevent excessive result sets
+    let limit = q.limit.unwrap_or(20).min(500) as i64;
+    sql.push_str(&format!(" LIMIT ?{}", pv.len() + 1));
+    pv.push(Box::new(limit));
 
     let refs: Vec<&dyn rusqlite::types::ToSql> = pv.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
@@ -76,7 +82,11 @@ pub fn list_agents(conn: &Connection, q: &AgentQuery) -> rusqlite::Result<Vec<Ag
 }
 
 /// Update an agent spec by name.
+/// Validates input before persisting.
 pub fn update_agent(conn: &Connection, name: &str, input: &AgentInput) -> rusqlite::Result<bool> {
+    input
+        .validate()
+        .map_err(rusqlite::Error::InvalidParameterName)?;
     let caps_json = serde_json::to_string(&input.capabilities).unwrap_or_default();
     let n = conn.execute(
         "UPDATE agent_catalog SET
