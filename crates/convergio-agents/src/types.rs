@@ -124,6 +124,81 @@ pub struct AgentInput {
     pub escalation_target: Option<String>,
 }
 
+/// Maximum length for free-text fields to prevent abuse.
+const MAX_NAME_LEN: usize = 128;
+const MAX_ROLE_LEN: usize = 512;
+const MAX_ORG_LEN: usize = 128;
+const MAX_CAPABILITIES: usize = 32;
+const MAX_CAPABILITY_LEN: usize = 64;
+const MAX_TOKENS_UPPER: i64 = 2_000_000;
+const MAX_HOURLY_BUDGET: f64 = 10_000.0;
+const VALID_TIERS: &[&str] = &["t1", "t2", "t3", "t4"];
+
+impl AgentInput {
+    /// Validate all fields. Returns `Err(reason)` on invalid input.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.is_empty() || self.name.len() > MAX_NAME_LEN {
+            return Err(format!(
+                "name must be 1–{MAX_NAME_LEN} chars, got {}",
+                self.name.len()
+            ));
+        }
+        // Only allow alphanumeric, hyphens, underscores in name (prevents injection in logs/paths)
+        if !self
+            .name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err("name must contain only [a-zA-Z0-9_-]".into());
+        }
+        if self.role.is_empty() || self.role.len() > MAX_ROLE_LEN {
+            return Err(format!(
+                "role must be 1–{MAX_ROLE_LEN} chars, got {}",
+                self.role.len()
+            ));
+        }
+        if self.org.is_empty() || self.org.len() > MAX_ORG_LEN {
+            return Err(format!(
+                "org must be 1–{MAX_ORG_LEN} chars, got {}",
+                self.org.len()
+            ));
+        }
+        if !VALID_TIERS.contains(&self.model_tier.as_str()) {
+            return Err(format!(
+                "model_tier must be one of {VALID_TIERS:?}, got '{}'",
+                self.model_tier
+            ));
+        }
+        if self.max_tokens <= 0 || self.max_tokens > MAX_TOKENS_UPPER {
+            return Err(format!(
+                "max_tokens must be 1–{MAX_TOKENS_UPPER}, got {}",
+                self.max_tokens
+            ));
+        }
+        if self.hourly_budget < 0.0 || self.hourly_budget > MAX_HOURLY_BUDGET {
+            return Err(format!(
+                "hourly_budget must be 0.0–{MAX_HOURLY_BUDGET}, got {}",
+                self.hourly_budget
+            ));
+        }
+        if self.capabilities.len() > MAX_CAPABILITIES {
+            return Err(format!(
+                "capabilities max {MAX_CAPABILITIES}, got {}",
+                self.capabilities.len()
+            ));
+        }
+        for cap in &self.capabilities {
+            if cap.len() > MAX_CAPABILITY_LEN {
+                return Err(format!(
+                    "capability too long (max {MAX_CAPABILITY_LEN}): '{}'",
+                    &cap[..cap.len().min(20)]
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 fn default_org() -> String {
     "convergio".into()
 }
@@ -146,6 +221,21 @@ pub struct AgentQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn valid_input() -> AgentInput {
+        AgentInput {
+            name: "test-agent".into(),
+            role: "Test role".into(),
+            org: "convergio".into(),
+            category: AgentCategory::CoreUtility,
+            model_tier: "t2".into(),
+            max_tokens: 200_000,
+            hourly_budget: 0.0,
+            capabilities: vec!["test".into()],
+            prompt_ref: None,
+            escalation_target: None,
+        }
+    }
 
     #[test]
     fn category_roundtrip() {
@@ -170,5 +260,61 @@ mod tests {
     #[test]
     fn category_display() {
         assert_eq!(AgentCategory::CoreUtility.to_string(), "core_utility");
+    }
+
+    #[test]
+    fn validate_valid_input() {
+        assert!(valid_input().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_empty_name() {
+        let mut inp = valid_input();
+        inp.name = String::new();
+        assert!(inp.validate().is_err());
+    }
+
+    #[test]
+    fn validate_name_special_chars() {
+        let mut inp = valid_input();
+        inp.name = "agent; DROP TABLE".into();
+        assert!(inp.validate().is_err());
+    }
+
+    #[test]
+    fn validate_name_too_long() {
+        let mut inp = valid_input();
+        inp.name = "a".repeat(MAX_NAME_LEN + 1);
+        assert!(inp.validate().is_err());
+    }
+
+    #[test]
+    fn validate_invalid_tier() {
+        let mut inp = valid_input();
+        inp.model_tier = "t99".into();
+        assert!(inp.validate().is_err());
+    }
+
+    #[test]
+    fn validate_negative_tokens() {
+        let mut inp = valid_input();
+        inp.max_tokens = -1;
+        assert!(inp.validate().is_err());
+    }
+
+    #[test]
+    fn validate_negative_budget() {
+        let mut inp = valid_input();
+        inp.hourly_budget = -5.0;
+        assert!(inp.validate().is_err());
+    }
+
+    #[test]
+    fn validate_too_many_capabilities() {
+        let mut inp = valid_input();
+        inp.capabilities = (0..MAX_CAPABILITIES + 1)
+            .map(|i| format!("cap-{i}"))
+            .collect();
+        assert!(inp.validate().is_err());
     }
 }
