@@ -1,7 +1,7 @@
 [package]
 name = "convergio-agents"
 description = "Agent catalog, org routing, model preferences"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 license.workspace = true
 readme = "../../README.md"
